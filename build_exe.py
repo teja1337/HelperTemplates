@@ -8,10 +8,10 @@ import subprocess
 import sys
 
 def build_exe():
-    """Создание исполняемого файла"""
+    """Создание исполняемых файлов Helper.exe и updater.exe"""
     
     print("=" * 60)
-    print("🔨 Начинаю сборку Helper.exe...")
+    print("🔨 Начинаю сборку Helper.exe и updater.exe...")
     print("=" * 60)
     
     # Путь к текущей директории
@@ -26,16 +26,24 @@ def build_exe():
             shutil.rmtree(dir_path)
             print(f"   ✓ Удалена папка {dir_path}")
     
-    # Команда для PyInstaller
+    # Создаем папки заново
+    os.makedirs(dist_dir, exist_ok=True)
+    
+    success = True
+    
+    # Команда для PyInstaller - Helper.exe
+    print("\n🔨 Создаю Helper.exe...")
     pyinstaller_cmd = [
         sys.executable, '-m', 'PyInstaller',
-        '--onefile',  # Один исполняемый файл
-        '--windowed',  # Без консольного окна
-        '--name', 'Helper',  # Имя приложения
+        '--onefile',
+        '--windowed',
+        '--name', 'Helper',
+        '--add-data', f'{os.path.join(project_dir, "version.json")};.',
         '--distpath', dist_dir,
         '--workpath', build_dir,
         '--specpath', project_dir,
-        os.path.join(project_dir, 'main.py')
+        os.path.join(project_dir, 'main.py'),
+        '-y'
     ]
     
     # Добавляем иконку если она существует
@@ -44,34 +52,53 @@ def build_exe():
         pyinstaller_cmd.insert(5, icon_path)
         pyinstaller_cmd.insert(4, '--icon')
     
-    print("\n🔨 Запускаю PyInstaller...")
-    print(f"   Команда: {' '.join(pyinstaller_cmd)}\n")
-    
     try:
         result = subprocess.run(pyinstaller_cmd, check=True)
-        
-        if result.returncode == 0:
-            exe_path = os.path.join(dist_dir, 'Helper.exe')
-            
-            if os.path.exists(exe_path):
-                print("\n" + "=" * 60)
-                print("✅ УСПЕШНО! Helper.exe создан!")
-                print("=" * 60)
-                print(f"\n📂 Путь к файлу: {exe_path}")
-                print(f"📊 Размер файла: {os.path.getsize(exe_path) / (1024*1024):.2f} MB")
-                print("\n💡 Вы можете запустить приложение, двойной клик на Helper.exe")
-                print("   или скопировать его куда угодно")
-                
-                return True
-            else:
-                print("❌ Ошибка: Helper.exe не найден в папке dist")
-                return False
-    
+        print("   ✓ Helper.exe создан успешно!")
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ Ошибка при сборке: {e}")
-        return False
-    except Exception as e:
-        print(f"\n❌ Непредвиденная ошибка: {e}")
+        print(f"   ❌ Ошибка при создании Helper.exe: {e}")
+        success = False
+    
+    # Команда для PyInstaller - updater.exe
+    print("\n🔨 Создаю updater.exe...")
+    updater_cmd = [
+        sys.executable, '-m', 'PyInstaller',
+        '--onefile',
+        '--console',
+        '--name', 'updater',
+        '--distpath', dist_dir,
+        '--workpath', build_dir,
+        '--specpath', project_dir,
+        os.path.join(project_dir, 'updater.py'),
+        '-y'
+    ]
+    
+    try:
+        result = subprocess.run(updater_cmd, check=True)
+        print("   ✓ updater.exe создан успешно!")
+    except subprocess.CalledProcessError as e:
+        print(f"   ❌ Ошибка при создании updater.exe: {e}")
+        success = False
+    
+    if success:
+        helper_exe = os.path.join(dist_dir, 'Helper.exe')
+        updater_exe = os.path.join(dist_dir, 'updater.exe')
+        
+        if os.path.exists(helper_exe) and os.path.exists(updater_exe):
+            print("\n" + "=" * 60)
+            print("✅ УСПЕШНО! Все файлы созданы!")
+            print("=" * 60)
+            print(f"\n📂 Helper.exe: {helper_exe}")
+            print(f"📊 Размер: {os.path.getsize(helper_exe) / (1024*1024):.2f} MB")
+            print(f"\n📂 updater.exe: {updater_exe}")
+            print(f"📊 Размер: {os.path.getsize(updater_exe) / (1024*1024):.2f} MB")
+            print("\n💡 Скопируйте оба файла вместе для работы автообновления")
+            
+            return True
+        else:
+            print("\n❌ Ошибка: Файлы не найдены в папке dist")
+            return False
+    else:
         return False
 
 if __name__ == '__main__':

@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
 from views.template_widgets import CategoryHeader, TemplateWidget
 from utils.clipboard import copy_to_clipboard
+from utils.updater import AppUpdater
 
 # Стандартизированные размеры шрифтов для консистентности
 FONT_TITLE = ("Segoe UI", 14, "bold")  # Заголовок окна
@@ -27,6 +28,9 @@ class MainWindow:
         self.setup_window()
         self.setup_ui()
         self.update_templates_display()
+        
+        # Проверка обновлений при запуске
+        self.check_updates_on_startup()
     
     def setup_context_menu_for_widget(self, widget: ctk.CTkBaseClass) -> None:
         """Добавить горячие клавиши для текстового виджета"""
@@ -979,6 +983,153 @@ class MainWindow:
             command=on_cancel,
             width=100
         ).pack(side=ctk.LEFT, padx=5)
+    
+    def check_updates_on_startup(self):
+        """Проверить обновления в отдельном потоке"""
+        thread = threading.Thread(target=self._check_updates_background, daemon=True)
+        thread.start()
+    
+    def _check_updates_background(self):
+        """Проверить обновления в фоновом потоке"""
+        try:
+            has_update, remote_version, download_url = AppUpdater.check_for_updates()
+            
+            if has_update:
+                # Вызываем диалог в главном потоке
+                self.root.after(0, lambda: self.show_update_dialog(remote_version, download_url))
+        except Exception as e:
+            print(f"Ошибка при проверке обновлений: {e}")
+    
+    def show_update_dialog(self, remote_version, download_url):
+        """Показать диалог об обновлении"""
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Доступно обновление")
+        dialog.geometry("450x250")
+        dialog.resizable(False, False)
+        
+        # Центрируем диалог
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (450 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (250 // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Устанавливаем поверх всех окон
+        dialog.attributes("-topmost", True)
+        dialog.lift()
+        dialog.focus_force()
+        
+        # Заголовок
+        title_label = ctk.CTkLabel(
+            dialog,
+            text="🎉 Доступно обновление!",
+            font=("Segoe UI", 18, "bold")
+        )
+        title_label.pack(pady=(20, 10))
+        
+        # Информация о версии
+        info_label = ctk.CTkLabel(
+            dialog,
+            text=f"Новая версия: {remote_version}\n\nОбновить приложение сейчас?",
+            font=("Segoe UI", 13)
+        )
+        info_label.pack(pady=10)
+        
+        # Прогресс бар (изначально скрыт)
+        progress_label = ctk.CTkLabel(
+            dialog,
+            text="Загрузка обновления...",
+            font=("Segoe UI", 11)
+        )
+        
+        progress_bar = ctk.CTkProgressBar(dialog, width=350)
+        progress_bar.set(0)
+        
+        def update_now():
+            # Скрываем кнопки, показываем прогресс
+            btn_frame.pack_forget()
+            progress_label.pack(pady=5)
+            progress_bar.pack(pady=10)
+            
+            # Запускаем загрузку в отдельном потоке
+            thread = threading.Thread(
+                target=self._download_and_install,
+                args=(download_url, progress_bar, dialog),
+                daemon=True
+            )
+            thread.start()
+        
+        def skip():
+            dialog.destroy()
+        
+        # Кнопки
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=20)
+        
+        update_btn = ctk.CTkButton(
+            btn_frame,
+            text="✅ Обновить",
+            command=update_now,
+            width=150,
+            height=35,
+            font=("Segoe UI", 12, "bold"),
+            fg_color="#4CAF50",
+            hover_color="#45a049"
+        )
+        update_btn.pack(side="left", padx=10)
+        
+        skip_btn = ctk.CTkButton(
+            btn_frame,
+            text="❌ Пропустить",
+            command=skip,
+            width=150,
+            height=35,
+            font=("Segoe UI", 12),
+            fg_color="#757575",
+            hover_color="#616161"
+        )
+        skip_btn.pack(side="left", padx=10)
+    
+    def _download_and_install(self, download_url, progress_bar, dialog):
+        """Скачать и установить обновление"""
+        def update_progress(value):
+            # Обновляем прогресс в главном потоке
+            self.root.after(0, lambda: progress_bar.set(value / 100))
+        
+        # Скачиваем обновление
+        success, update_path = AppUpdater.download_update(download_url, update_progress)
+        
+        if success:
+            # Закрываем диалог
+            self.root.after(0, dialog.destroy)
+            # Устанавливаем обновление
+            self.root.after(100, lambda: AppUpdater.install_update(self.root))
+        else:
+            # Показываем ошибку
+            self.root.after(0, lambda: self._show_update_error(dialog))
+    
+    def _show_update_error(self, parent_dialog):
+        """Показать ошибку обновления"""
+        parent_dialog.destroy()
+        
+        error_dialog = ctk.CTkToplevel(self.root)
+        error_dialog.title("Ошибка обновления")
+        error_dialog.geometry("400x150")
+        error_dialog.attributes("-topmost", True)
+        
+        label = ctk.CTkLabel(
+            error_dialog,
+            text="❌ Не удалось загрузить обновление\n\nПопробуйте позже",
+            font=("Segoe UI", 13)
+        )
+        label.pack(pady=30)
+        
+        ok_btn = ctk.CTkButton(
+            error_dialog,
+            text="OK",
+            command=error_dialog.destroy,
+            width=100
+        )
+        ok_btn.pack(pady=10)
         
         # Обработка горячих клавиш
         dialog.bind('<Escape>', lambda e: on_cancel())
