@@ -1,3 +1,6 @@
+"""
+Главное окно приложения Template Helper
+"""
 import customtkinter as ctk
 from typing import TYPE_CHECKING
 import threading
@@ -12,21 +15,24 @@ if TYPE_CHECKING:
 from views.template_widgets import CategoryHeader, TemplateWidget
 from utils.clipboard import copy_to_clipboard
 from utils.updater import AppUpdater
+from config.constants import COLORS, FONTS, SIZES
+from config.settings import MESSAGES, EMOJI, PATHS, APP_NAME, APP_TITLE_PANEL, APP_AUTHOR
 
-# Стандартизированные размеры шрифтов для консистентности
-FONT_TITLE = ("Segoe UI", 14, "bold")  # Заголовок окна
-FONT_BUTTON_EMOJI = ("Segoe UI", 13)  # Кнопки с эмодзи
-FONT_BUTTON = ("Segoe UI", 12)  # Обычные кнопки
-FONT_LABEL = ("Segoe UI", 11)  # Подписи
-FONT_SMALL = ("Segoe UI", 10)  # Маленький текст
 
 class MainWindow:
-    """Главное окно приложения Хелпер с современным дизайном"""
+    """
+    Главное окно приложения Template Helper
+    
+    Attributes:
+        root: Корневое окно CTk
+        template_manager: Менеджер шаблонов
+        is_always_on_top: Флаг режима "всегда поверх"
+    """
     
     def __init__(self, root: ctk.CTk, template_manager: 'TemplateManager'):
         self.root = root
         self.template_manager = template_manager
-        self.is_always_on_top = False  # Флаг для режима "всегда поверх"
+        self.is_always_on_top = False
         
         self.setup_window()
         self.setup_ui()
@@ -128,32 +134,46 @@ class MainWindow:
         widget.bind('<Control-a>', make_select_all_handler())
     
     def setup_window(self) -> None:
-        """Настройка главного окна с современным дизайном"""
-        self.root.title("Хелпер - оператор чата")
+        """Настройка главного окна приложения"""
+        self.root.title(APP_NAME)
         
-        # Начальный размер окна - 1000x800 (средний размер)
-        window_width = 1000
-        window_height = 800
+        # Загружаем иконку для окна
+        try:
+            icon_paths = PATHS.get_icon_paths()
+            icon_path = None
+            
+            for path in icon_paths:
+                if path and path.exists():
+                    icon_path = path
+                    break
+            
+            if icon_path:
+                try:
+                    self.root.iconbitmap(str(icon_path))
+                    print(f"[DEBUG] ✅ Иконка успешно загружена: {icon_path}")
+                except Exception as e:
+                    print(f"[DEBUG] ❌ iconbitmap ошибка: {e}")
+            else:
+                print(f"[DEBUG] ⚠️ Иконка не найдена")
+                
+        except Exception as e:
+            print(f"[DEBUG] ❌ Ошибка при загрузке иконки: {e}")
         
         # Получаем размеры экрана
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         
         # Центрируем окно
-        x = (screen_width - window_width) // 2
-        y = (screen_height - window_height) // 2
+        x = (screen_width - SIZES.WINDOW_WIDTH) // 2
+        y = (screen_height - SIZES.WINDOW_HEIGHT) // 2
         
         # Устанавливаем геометрию
-        self.root.geometry(f'{window_width}x{window_height}+{x}+{y}')
+        self.root.geometry(f'{SIZES.WINDOW_WIDTH}x{SIZES.WINDOW_HEIGHT}+{x}+{y}')
         
         # Устанавливаем минимальный размер окна
-        self.root.minsize(800, 600)
+        self.root.minsize(SIZES.WINDOW_MIN_WIDTH, SIZES.WINDOW_MIN_HEIGHT)
         
-        # Добавляем тень для окна без рамок (Windows 10/11)
-        try:
-            self.root.after(100, lambda: self.root.wm_attributes("-topmost", False))
-        except Exception:
-            pass
+        print("[DEBUG] Используем стандартные рамки Windows")
     
     def setup_ui(self) -> None:
         """Создание современного пользовательского интерфейса"""
@@ -161,8 +181,8 @@ class MainWindow:
         self.create_custom_titlebar()
         
         # Основной фрейм с отступом сверху
-        main_frame = ctk.CTkFrame(self.root, fg_color="#1a1a1a")
-        main_frame.pack(fill=ctk.BOTH, expand=True, padx=0, pady=(10, 0))
+        main_frame = ctk.CTkFrame(self.root, fg_color=COLORS.BG_DARK)
+        main_frame.pack(fill=ctk.BOTH, expand=True, padx=0, pady=(SIZES.PADDING_MEDIUM, 0))
         
         # Заголовок с категориями
         self.category_header = CategoryHeader(
@@ -177,8 +197,8 @@ class MainWindow:
         )
         
         # Область отображения шаблонов
-        self.templates_frame = ctk.CTkFrame(main_frame, fg_color="#1a1a1a")
-        self.templates_frame.pack(fill=ctk.BOTH, expand=True, padx=10, pady=10)
+        self.templates_frame = ctk.CTkFrame(main_frame, fg_color=COLORS.BG_DARK)
+        self.templates_frame.pack(fill=ctk.BOTH, expand=True, padx=SIZES.PADDING_MEDIUM, pady=SIZES.PADDING_MEDIUM)
         
         # Статус-бар в правом нижнем углу
         self.setup_status_bar(main_frame)
@@ -188,31 +208,31 @@ class MainWindow:
     
     def setup_status_bar(self, parent):
         """Настройка статус-бара"""
-        status_frame = ctk.CTkFrame(parent, fg_color="#2b2b2b", height=40)
+        status_frame = ctk.CTkFrame(parent, fg_color=COLORS.BG_MEDIUM, height=SIZES.STATUS_BAR_HEIGHT)
         status_frame.pack(fill=ctk.X, side=ctk.BOTTOM)
         status_frame.pack_propagate(False)
         
         # Левая часть статус-бара
         self.status_left = ctk.CTkLabel(
             status_frame, 
-            text="Готов к работе", 
-            text_color="#a0a0a0",
-            font=("Segoe UI", 10)
+            text=MESSAGES.STATUS_READY, 
+            text_color=COLORS.TEXT_MUTED,
+            font=FONTS.SMALL
         )
-        self.status_left.pack(side=ctk.LEFT, padx=10, pady=10)
+        self.status_left.pack(side=ctk.LEFT, padx=SIZES.PADDING_MEDIUM, pady=SIZES.PADDING_MEDIUM)
         
         # Правая часть статус-бара (для временных уведомлений)
         self.status_right = ctk.CTkLabel(
             status_frame, 
             text="", 
-            text_color="#90EE90",
-            font=("Segoe UI", 10)
+            text_color=COLORS.SUCCESS,
+            font=FONTS.SMALL
         )
-        self.status_right.pack(side=ctk.RIGHT, padx=10, pady=10)
+        self.status_right.pack(side=ctk.RIGHT, padx=SIZES.PADDING_MEDIUM, pady=SIZES.PADDING_MEDIUM)
     
     def show_status_message(self, message: str, duration: int = 2000):
         """Показать временное сообщение в статус-баре"""
-        self.status_right.configure(text=message, text_color="#90EE90")
+        self.status_right.configure(text=message, text_color=COLORS.SUCCESS)
         
         # Запускаем таймер для скрытия сообщения
         def clear_message():
@@ -306,7 +326,7 @@ class MainWindow:
         return dialog
     
     def create_custom_titlebar(self) -> None:
-        """Создает кастомную заголовочную панель с кнопкой закрытия и возможностью перемещения"""
+        """Создает кастомную заголовочную панель с замочком и информацией"""
         # Фрейм для заголовка
         titlebar = ctk.CTkFrame(
             self.root,
@@ -318,86 +338,50 @@ class MainWindow:
         titlebar.pack(side=ctk.TOP, fill=ctk.X, padx=0, pady=0)
         titlebar.pack_propagate(False)
         
-        # Иконка и название приложения слева
+        # Название приложения слева
         title_label = ctk.CTkLabel(
             titlebar,
-            text="💬 HelperTemplates",
-            font=FONT_TITLE,
-            text_color="#e0e0e0"
+            text=APP_TITLE_PANEL,
+            font=FONTS.TITLE,
+            text_color=COLORS.TEXT_SECONDARY
         )
         title_label.pack(side=ctk.LEFT, padx=15, pady=0)
         
-        # Авторство и версия справа (перед кнопками) - вертикальный стек
+        # Кнопка закрепления (замочек) - единственная кнопка управления
+        self.pin_button = ctk.CTkButton(
+            titlebar,
+            text=EMOJI.LOCK,
+            font=FONTS.BUTTON_EMOJI,
+            width=SIZES.BUTTON_ICON_SIZE,
+            height=SIZES.TITLEBAR_HEIGHT,
+            fg_color="transparent",
+            hover_color=COLORS.HOVER_DARK,
+            text_color=COLORS.TEXT_DISABLED,
+            command=self.toggle_always_on_top,
+            corner_radius=0,
+            border_width=0
+        )
+        self.pin_button.pack(side=ctk.RIGHT, padx=5, pady=0)
+        
+        # Авторство и версия справа (после замочка) - вертикальный стек
         info_frame = ctk.CTkFrame(titlebar, fg_color="transparent")
         info_frame.pack(side=ctk.RIGHT, padx=15, pady=0)
         
         author_label = ctk.CTkLabel(
             info_frame,
-            text="Created by Nostro",
-            font=("Segoe UI", 11),
-            text_color="#808080"
+            text=APP_AUTHOR,
+            font=FONTS.LABEL,
+            text_color=COLORS.TEXT_DISABLED
         )
         author_label.pack(side=ctk.TOP, pady=0)
         
         version_label = ctk.CTkLabel(
             info_frame,
             text=f"v{self.get_app_version()}",
-            font=("Segoe UI", 10),
-            text_color="#808080"
+            font=FONTS.SMALL,
+            text_color=COLORS.TEXT_DISABLED
         )
         version_label.pack(side=ctk.TOP, pady=0)
-        
-        # Кнопки управления окном справа
-        buttons_frame = ctk.CTkFrame(titlebar, fg_color="transparent")
-        buttons_frame.pack(side=ctk.RIGHT, padx=0, pady=0)
-        
-        # Кнопка блокировки (всегда поверх)
-        self.pin_button = ctk.CTkButton(
-            buttons_frame,
-            text="📌",
-            font=FONT_BUTTON_EMOJI,
-            width=45,
-            height=40,
-            fg_color="transparent",
-            hover_color="#404040",
-            text_color="#808080",
-            command=self.toggle_always_on_top,
-            corner_radius=0,
-            border_width=0
-        )
-        self.pin_button.pack(side=ctk.LEFT, padx=0)
-        
-        # Кнопка сворачивания
-        minimize_button = ctk.CTkButton(
-            buttons_frame,
-            text="─",
-            font=FONT_BUTTON_EMOJI,
-            width=45,
-            height=40,
-            fg_color="transparent",
-            hover_color="#404040",
-            text_color="#e0e0e0",
-            command=self.minimize_window,
-            corner_radius=0,
-            border_width=0
-        )
-        minimize_button.pack(side=ctk.LEFT, padx=0)
-        
-        # Кнопка закрытия
-        close_button = ctk.CTkButton(
-            buttons_frame,
-            text="✕",
-            font=FONT_BUTTON_EMOJI,
-            width=45,
-            height=40,
-            fg_color="transparent",
-            hover_color="#e81123",
-            text_color="#e0e0e0",
-            command=self.root.quit,
-            corner_radius=0,
-            border_width=0
-        )
-        close_button.pack(side=ctk.LEFT, padx=0)
         
         # Функциональность перемещения окна
         self.drag_data = {"x": 0, "y": 0}
@@ -417,20 +401,6 @@ class MainWindow:
         y = event.y_root - self.drag_data["y"]
         self.root.geometry(f"+{x}+{y}")
     
-    def minimize_window(self):
-        """Сворачивает окно - для frameless окон используем withdraw и восстанавливаем через панель задач"""
-        # Для окна без рамок iconify() не работает, поэтому используем withdraw()
-        # и возвращаем рамки временно
-        self.root.overrideredirect(False)
-        self.root.iconify()
-        # После восстановления вернем frameless режим
-        self.root.bind('<Map>', self._on_window_restore)
-    
-    def _on_window_restore(self, event=None):
-        """Восстанавливает frameless режим после разворачивания"""
-        self.root.unbind('<Map>')
-        self.root.overrideredirect(True)
-    
     def toggle_always_on_top(self) -> None:
         """Включает/отключает режим 'всегда поверх всех окон'"""
         self.is_always_on_top = not self.is_always_on_top
@@ -438,9 +408,9 @@ class MainWindow:
         
         # Обновляем цвет кнопки как индикатор статуса
         if self.is_always_on_top:
-            self.pin_button.configure(text_color="#4CAF50")  # Зелёный - активно
+            self.pin_button.configure(text_color=COLORS.ACCENT_GREEN)  # Зелёный - активно
         else:
-            self.pin_button.configure(text_color="#808080")  # Серый - неактивно
+            self.pin_button.configure(text_color=COLORS.TEXT_DISABLED)  # Серый - неактивно
     
     def on_category_selected(self, event=None) -> None:
         """Обработчик выбора категории"""
@@ -587,28 +557,28 @@ class MainWindow:
             btn_frame,
             text="🔤 Переименовать",
             command=on_rename,
-            width=150,
-            font=FONT_BUTTON_EMOJI
-        ).pack(side=ctk.LEFT, padx=5)
+            width=SIZES.BUTTON_WIDTH_LARGE,
+            font=FONTS.BUTTON_EMOJI
+        ).pack(side=ctk.LEFT, padx=SIZES.PADDING_SMALL)
         
         # Кнопка удаления
         ctk.CTkButton(
             btn_frame,
-            text="🗑️ Удалить",
+            text=f"{EMOJI.DELETE} Удалить",
             command=on_delete,
-            fg_color="#d32f2f",
-            hover_color="#b71c1c",
-            width=150,
-            font=("Segoe UI Emoji", 12)
-        ).pack(side=ctk.LEFT, padx=5)
+            fg_color=COLORS.ACCENT_RED,
+            hover_color=COLORS.ACCENT_RED_HOVER,
+            width=SIZES.BUTTON_WIDTH_LARGE,
+            font=FONTS.BUTTON_EMOJI
+        ).pack(side=ctk.LEFT, padx=SIZES.PADDING_SMALL)
         
         # Кнопка отмены
         ctk.CTkButton(
             btn_frame,
             text="Отмена",
             command=on_cancel,
-            width=100
-        ).pack(side=ctk.LEFT, padx=5)
+            width=SIZES.BUTTON_WIDTH_SMALL
+        ).pack(side=ctk.LEFT, padx=SIZES.PADDING_SMALL)
         
         # Обработка горячих клавиш
         dialog.bind('<Return>', lambda e: on_rename())

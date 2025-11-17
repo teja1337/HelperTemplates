@@ -1,15 +1,19 @@
+"""
+Виджеты для отображения шаблонов и категорий
+"""
 import customtkinter as ctk
 from typing import Callable
+from config.constants import COLORS, FONTS, SIZES
+from config.settings import EMOJI
 
-# Стандартизированные размеры шрифтов для консистентности
-FONT_TITLE = ("Segoe UI", 14, "bold")  # Заголовок окна
-FONT_BUTTON_EMOJI = ("Segoe UI", 13)  # Кнопки с эмодзи
-FONT_BUTTON = ("Segoe UI", 12)  # Обычные кнопки
-FONT_LABEL = ("Segoe UI", 11)  # Подписи
-FONT_SMALL = ("Segoe UI", 10)  # Маленький текст
 
 class ClickableComboBox(ctk.CTkComboBox):
-    """Расширенный ComboBox, который открывается по клику на основное поле"""
+    """
+    Расширенный ComboBox, который открывается по клику на основное поле
+    
+    Улучшает UX, позволяя открывать выпадающий список кликом по всему виджету,
+    а не только по стрелке.
+    """
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -52,10 +56,10 @@ class ClickableComboBox(ctk.CTkComboBox):
                 # Настраиваем само меню
                 try:
                     dropdown.configure(
-                        fg_color="#2b2b2b",
-                        corner_radius=8,
+                        fg_color=COLORS.BG_MEDIUM,
+                        corner_radius=SIZES.CORNER_RADIUS_MEDIUM,
                         border_width=1,
-                        border_color="#404040"
+                        border_color=COLORS.BORDER_DEFAULT
                     )
                 except:
                     pass
@@ -95,9 +99,19 @@ class ClickableComboBox(ctk.CTkComboBox):
             pass
 
 class TemplateWidget:
-    """Современный виджет для отображения одного шаблона"""
+    """
+    Виджет для отображения одного шаблона с возможностью копирования и редактирования
     
-    def __init__(self, parent, template: dict, template_index: int, copy_callback: Callable, edit_callback: Callable):
+    Attributes:
+        parent: Родительский виджет
+        template (dict): Данные шаблона (title, text)
+        template_index (int): Индекс шаблона в списке
+        copy_callback (Callable): Функция для копирования текста
+        edit_callback (Callable): Функция для редактирования шаблона
+    """
+    
+    def __init__(self, parent, template: dict, template_index: int, 
+                 copy_callback: Callable, edit_callback: Callable):
         self.parent = parent
         self.template = template
         self.template_index = template_index
@@ -107,65 +121,81 @@ class TemplateWidget:
         self.create_widget()
     
     def create_widget(self) -> None:
-        """Создание современного виджета шаблона"""
+        """Создание виджета шаблона с современным дизайном"""
         # Основной фрейм карточки
-        self.frame = ctk.CTkFrame(self.parent, fg_color="#2b2b2b", corner_radius=10)
-        self.frame.pack(fill=ctk.X, pady=8, padx=10)
+        self.frame = ctk.CTkFrame(
+            self.parent, 
+            fg_color=COLORS.BG_MEDIUM, 
+            corner_radius=SIZES.CORNER_RADIUS_LARGE
+        )
+        self.frame.pack(fill=ctk.X, pady=8, padx=SIZES.PADDING_MEDIUM)
         
         # Заголовок карточки
         title_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
-        title_frame.pack(fill=ctk.X, pady=(15, 10), padx=15)
+        title_frame.pack(fill=ctk.X, pady=(SIZES.PADDING_LARGE, SIZES.PADDING_MEDIUM), 
+                        padx=SIZES.PADDING_LARGE)
         
         title_label = ctk.CTkLabel(
             title_frame, 
             text=self.template['title'], 
-            font=("Segoe UI Emoji", 14, "bold"),
-            text_color="white"
+            font=FONTS.SUBTITLE,
+            text_color=COLORS.TEXT_PRIMARY
         )
         title_label.pack(side=ctk.LEFT, expand=True, anchor="w")
         
         # Кнопка копирования
         copy_btn = ctk.CTkButton(
             title_frame,
-            text="📋 Копировать",
+            text=f"{EMOJI.COPY} Копировать",
             command=lambda: self.copy_callback(self.template['text']),
             width=120,
-            height=32,
-            corner_radius=6,
-            font=("Segoe UI Emoji", 12)
+            height=SIZES.BUTTON_HEIGHT,
+            corner_radius=SIZES.CORNER_RADIUS_SMALL,
+            font=FONTS.BUTTON_EMOJI
         )
-        copy_btn.pack(side=ctk.RIGHT, padx=(5, 0))
+        copy_btn.pack(side=ctk.RIGHT, padx=(SIZES.PADDING_SMALL, 0))
         
         # Кнопка редактирования
         edit_btn = ctk.CTkButton(
             title_frame,
-            text="✏️ Редактировать",
+            text=f"{EMOJI.EDIT} Редактировать",
             command=lambda: self.edit_callback(self.template_index),
             width=140,
-            height=32,
-            corner_radius=6,
-            font=("Segoe UI Emoji", 12)
+            height=SIZES.BUTTON_HEIGHT,
+            corner_radius=SIZES.CORNER_RADIUS_SMALL,
+            font=FONTS.BUTTON_EMOJI
         )
-        edit_btn.pack(side=ctk.RIGHT, padx=5)
+        edit_btn.pack(side=ctk.RIGHT, padx=SIZES.PADDING_SMALL)
         
-        # Текст шаблона в современном стиле
+        # Текст шаблона
         text_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
-        text_frame.pack(fill=ctk.BOTH, expand=True, padx=15, pady=(0, 15))
+        text_frame.pack(fill=ctk.BOTH, expand=True, 
+                       padx=SIZES.PADDING_LARGE, 
+                       pady=(0, SIZES.PADDING_LARGE))
         
-        # Используем Textbox с современным стилем
         self.text_widget = ctk.CTkTextbox(
             text_frame, 
-            height=150, 
-            width=70,
-            fg_color="#1a1a1a",
-            font=("Segoe UI Emoji", 11)
+            height=SIZES.TEMPLATE_DISPLAY_HEIGHT, 
+            width=SIZES.TEXTBOX_WIDTH,
+            fg_color=COLORS.BG_DARK,
+            font=FONTS.TEXT
         )
         self.text_widget.insert("1.0", self.template['text'])
         self.text_widget.configure(state="disabled")
         self.text_widget.pack(fill=ctk.BOTH, expand=True)
 
 class CategoryHeader:
-    """Современная верхняя панель с выбором категории"""
+    """
+    Панель управления категориями шаблонов
+    
+    Attributes:
+        parent: Родительский виджет
+        on_category_select (Callable): Обработчик выбора категории
+        on_category_type_select (Callable): Обработчик выбора типа категории
+        on_add_category (Callable): Обработчик добавления категории
+        on_edit_category (Callable): Обработчик редактирования категории
+        on_add_template (Callable): Обработчик добавления шаблона
+    """
     
     def __init__(self, parent, categories: list, category_types: list,
                  on_category_select: Callable,
@@ -183,30 +213,48 @@ class CategoryHeader:
         self.create_widget(categories, category_types)
     
     def create_widget(self, categories: list, category_types: list) -> None:
-        """Создание современного виджета заголовка категории"""
-        # Основной фрейм с цветным фоном
-        self.frame = ctk.CTkFrame(self.parent, fg_color="#2b2b2b", corner_radius=10)
-        self.frame.pack(fill=ctk.X, pady=(0, 10), padx=10)
+        """Создание панели управления"""
+        # Основной фрейм
+        self.frame = ctk.CTkFrame(
+            self.parent, 
+            fg_color=COLORS.BG_MEDIUM, 
+            corner_radius=SIZES.CORNER_RADIUS_LARGE
+        )
+        self.frame.pack(fill=ctk.X, pady=(0, SIZES.PADDING_MEDIUM), padx=SIZES.PADDING_MEDIUM)
         
-        # Заголовок секции
+        # Заголовок
         header_label = ctk.CTkLabel(
             self.frame, 
             text="Хелпер - управление шаблонами", 
-            font=("Segoe UI", 18, "bold"),
-            text_color="white"
+            font=FONTS.HEADER,
+            text_color=COLORS.TEXT_PRIMARY
         )
-        header_label.pack(anchor="w", pady=(15, 15), padx=15)
+        header_label.pack(anchor="w", pady=(SIZES.PADDING_LARGE, SIZES.PADDING_LARGE), 
+                         padx=SIZES.PADDING_LARGE)
         
         # Панель управления
         control_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
-        control_frame.pack(fill=ctk.X, padx=15, pady=(0, 15))
+        control_frame.pack(fill=ctk.X, padx=SIZES.PADDING_LARGE, 
+                          pady=(0, SIZES.PADDING_LARGE))
         
-        # Левая часть - выбор типа категорий и категории
-        left_frame = ctk.CTkFrame(control_frame, fg_color="transparent")
+        # Левая часть - выбор типа и категории
+        self._create_selection_controls(control_frame, categories, category_types)
+        
+        # Правая часть - кнопки действий
+        self._create_action_buttons(control_frame)
+    
+    def _create_selection_controls(self, parent, categories: list, category_types: list) -> None:
+        """Создание элементов выбора типа и категории"""
+        left_frame = ctk.CTkFrame(parent, fg_color="transparent")
         left_frame.pack(side=ctk.LEFT, fill=ctk.BOTH, expand=True)
         
         # Выбор типа категорий
-        ctk.CTkLabel(left_frame, text="Тип:", text_color="white", font=("Segoe UI", 12)).pack(side=ctk.LEFT, padx=(0, 8))
+        ctk.CTkLabel(
+            left_frame, 
+            text="Тип:", 
+            text_color=COLORS.TEXT_PRIMARY, 
+            font=FONTS.BUTTON
+        ).pack(side=ctk.LEFT, padx=(0, 8))
         
         self.type_var = ctk.StringVar()
         self.type_combo = ClickableComboBox(
@@ -214,83 +262,89 @@ class CategoryHeader:
             variable=self.type_var,
             values=category_types,
             state="readonly",
-            font=("Segoe UI", 12),
-            dropdown_fg_color="#2b2b2b",
-            dropdown_hover_color="#404040",
-            dropdown_text_color="white",
-            button_color="#404040",
-            button_hover_color="#505050",
-            border_color="#404040",
-            fg_color="#2b2b2b",
-            text_color="white",
+            font=FONTS.BUTTON,
+            dropdown_fg_color=COLORS.BG_MEDIUM,
+            dropdown_hover_color=COLORS.HOVER_DARK,
+            dropdown_text_color=COLORS.TEXT_PRIMARY,
+            button_color=COLORS.BG_LIGHT,
+            button_hover_color=COLORS.HOVER_LIGHT,
+            border_color=COLORS.BORDER_DEFAULT,
+            fg_color=COLORS.BG_MEDIUM,
+            text_color=COLORS.TEXT_PRIMARY,
             width=120
         )
-        self.type_combo.pack(side=ctk.LEFT, padx=(0, 20))
+        self.type_combo.pack(side=ctk.LEFT, padx=(0, SIZES.PADDING_XLARGE))
         self.type_combo.configure(command=lambda _: self.on_type_select())
         
-        # Инициализируем первый тип
         if category_types:
             self.type_combo.set(category_types[0])
         
         # Выбор категории
-        ctk.CTkLabel(left_frame, text="Категория:", text_color="white", font=("Segoe UI", 12)).pack(side=ctk.LEFT, padx=(0, 8))
+        ctk.CTkLabel(
+            left_frame, 
+            text="Категория:", 
+            text_color=COLORS.TEXT_PRIMARY, 
+            font=FONTS.BUTTON
+        ).pack(side=ctk.LEFT, padx=(0, 8))
         
-        # Используем кастомный комбобокс, который открывается по клику
         self.category_var = ctk.StringVar()
         self.category_combo = ClickableComboBox(
             left_frame, 
             variable=self.category_var,
             values=categories,
             state="readonly",
-            font=("Segoe UI Emoji", 12),
-            dropdown_fg_color="#2b2b2b",
-            dropdown_hover_color="#404040",
-            dropdown_text_color="white",
-            button_color="#404040",
-            button_hover_color="#505050",
-            border_color="#404040",
-            fg_color="#2b2b2b",
-            text_color="white"
+            font=FONTS.TEXT,
+            dropdown_fg_color=COLORS.BG_MEDIUM,
+            dropdown_hover_color=COLORS.HOVER_DARK,
+            dropdown_text_color=COLORS.TEXT_PRIMARY,
+            button_color=COLORS.BG_LIGHT,
+            button_hover_color=COLORS.HOVER_LIGHT,
+            border_color=COLORS.BORDER_DEFAULT,
+            fg_color=COLORS.BG_MEDIUM,
+            text_color=COLORS.TEXT_PRIMARY
         )
         self.category_combo.pack(side=ctk.LEFT, fill=ctk.X, expand=True)
         self.category_combo.configure(command=lambda _: self.on_category_select_callback())
         
-        # Инициализируем первую категорию, если она есть
         if categories:
             self.category_combo.set(categories[0])
+    
+    def _create_action_buttons(self, parent) -> None:
+        """Создание кнопок действий"""
+        right_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        right_frame.pack(side=ctk.RIGHT, padx=(SIZES.PADDING_LARGE, 0))
         
-        # Правая часть - кнопки действий
-        right_frame = ctk.CTkFrame(control_frame, fg_color="transparent")
-        right_frame.pack(side=ctk.RIGHT, padx=(15, 0))
-        
+        # Кнопка добавления категории
         ctk.CTkButton(
             right_frame, 
-            text="➕ Добавить", 
+            text=f"{EMOJI.ADD} Добавить", 
             command=self.on_add_category,
-            width=130,
-            height=36,
-            corner_radius=6,
-            font=("Segoe UI Emoji", 12)
+            width=SIZES.BUTTON_WIDTH_MEDIUM,
+            height=SIZES.BUTTON_LARGE_HEIGHT,
+            corner_radius=SIZES.CORNER_RADIUS_SMALL,
+            font=FONTS.BUTTON_EMOJI
         ).pack(side=ctk.LEFT, padx=3)
         
+        # Кнопка редактирования
         ctk.CTkButton(
             right_frame, 
-            text="✏️ Редактировать", 
+            text=f"{EMOJI.EDIT} Редактировать", 
             command=self.on_edit_category,
-            width=150,
-            height=36,
-            corner_radius=6,
-            font=("Segoe UI Emoji", 12)
+            width=SIZES.BUTTON_WIDTH_LARGE,
+            height=SIZES.BUTTON_LARGE_HEIGHT,
+            corner_radius=SIZES.CORNER_RADIUS_SMALL,
+            font=FONTS.BUTTON_EMOJI
         ).pack(side=ctk.LEFT, padx=3)
         
+        # Кнопка нового шаблона
         ctk.CTkButton(
             right_frame, 
-            text="➕ Новый шаблон", 
+            text=f"{EMOJI.ADD} Новый шаблон", 
             command=self.on_add_template,
-            width=150,
-            height=36,
-            corner_radius=6,
-            font=("Segoe UI Emoji", 12)
+            width=SIZES.BUTTON_WIDTH_LARGE,
+            height=SIZES.BUTTON_LARGE_HEIGHT,
+            corner_radius=SIZES.CORNER_RADIUS_SMALL,
+            font=FONTS.BUTTON_EMOJI
         ).pack(side=ctk.LEFT, padx=3)
     
     def update_categories(self, categories: list) -> None:
