@@ -360,25 +360,17 @@ class MainWindow:
         )
         self.pin_button.pack(side=ctk.RIGHT, padx=5, pady=0)
         
-        # Авторство и версия справа (после замочка) - вертикальный стек
+        # Авторство и версия справа (после замочка)
         info_frame = ctk.CTkFrame(titlebar, fg_color="transparent")
         info_frame.pack(side=ctk.RIGHT, padx=15, pady=0)
         
-        author_label = ctk.CTkLabel(
+        info_label = ctk.CTkLabel(
             info_frame,
-            text=APP_AUTHOR,
+            text=f"{APP_AUTHOR} | v{self.get_app_version()}",
             font=FONTS.LABEL,
             text_color=COLORS.TEXT_DISABLED
         )
-        author_label.pack(side=ctk.TOP, pady=0)
-        
-        version_label = ctk.CTkLabel(
-            info_frame,
-            text=f"v{self.get_app_version()}",
-            font=FONTS.SMALL,
-            text_color=COLORS.TEXT_DISABLED
-        )
-        version_label.pack(side=ctk.TOP, pady=0)
+        info_label.pack(side=ctk.TOP, pady=0)
         
         # Функциональность перемещения окна
         self.drag_data = {"x": 0, "y": 0}

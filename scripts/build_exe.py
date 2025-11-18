@@ -33,7 +33,7 @@ def build_exe():
     success = True
     
     # Команда для PyInstaller - Helper.exe
-    print("\n🔨 Создаю Helper.exe...")
+    print("\n[*] Создаю Helper.exe...")
     pyinstaller_cmd = [
         sys.executable, '-m', 'PyInstaller',
         '--onefile',
@@ -52,17 +52,17 @@ def build_exe():
     icon_path = os.path.join(project_dir, 'icon.ico')
     if os.path.exists(icon_path):
         pyinstaller_cmd.extend(['--icon', icon_path])
-        print(f"   ✓ Добавлена иконка: {icon_path}")
+        print(f"   [+] Добавлена иконка: {icon_path}")
     
     try:
         result = subprocess.run(pyinstaller_cmd, check=True)
-        print("   ✓ Helper.exe создан успешно!")
+        print("   [+] Helper.exe создан успешно!")
     except subprocess.CalledProcessError as e:
-        print(f"   ❌ Ошибка при создании Helper.exe: {e}")
+        print(f"   [-] Ошибка при создании Helper.exe: {e}")
         success = False
     
     # Команда для PyInstaller - updater.exe
-    print("\n🔨 Создаю updater.exe...")
+    print("\n[*] Создаю updater.exe...")
     updater_cmd = [
         sys.executable, '-m', 'PyInstaller',
         '--onefile',
@@ -75,11 +75,16 @@ def build_exe():
         '-y'
     ]
     
+    # Добавляем иконку если она существует
+    if os.path.exists(icon_path):
+        updater_cmd.extend(['--icon', icon_path])
+        print(f"   [+] Добавлена иконка: {icon_path}")
+    
     try:
         result = subprocess.run(updater_cmd, check=True)
-        print("   ✓ updater.exe создан успешно!")
+        print("   [+] updater.exe создан успешно!")
     except subprocess.CalledProcessError as e:
-        print(f"   ❌ Ошибка при создании updater.exe: {e}")
+        print(f"   [-] Ошибка при создании updater.exe: {e}")
         success = False
     
     if success:
@@ -88,17 +93,17 @@ def build_exe():
         
         if os.path.exists(helper_exe) and os.path.exists(updater_exe):
             print("\n" + "=" * 60)
-            print("✅ УСПЕШНО! Все файлы созданы!")
+            print("[+] УСПЕШНО! Все файлы созданы!")
             print("=" * 60)
-            print(f"\n📂 Helper.exe: {helper_exe}")
-            print(f"📊 Размер: {os.path.getsize(helper_exe) / (1024*1024):.2f} MB")
-            print(f"\n📂 updater.exe: {updater_exe}")
-            print(f"📊 Размер: {os.path.getsize(updater_exe) / (1024*1024):.2f} MB")
-            print("\n💡 Скопируйте оба файла вместе для работы автообновления")
+            print(f"\n[*] Helper.exe: {helper_exe}")
+            print(f"[*] Размер: {os.path.getsize(helper_exe) / (1024*1024):.2f} MB")
+            print(f"\n[*] updater.exe: {updater_exe}")
+            print(f"[*] Размер: {os.path.getsize(updater_exe) / (1024*1024):.2f} MB")
+            print("\n[*] Скопируйте оба файла вместе для работы автообновления")
             
             return True
         else:
-            print("\n❌ Ошибка: Файлы не найдены в папке dist")
+            print("\n[-] Ошибка: Файлы не найдены в папке dist")
             return False
     else:
         return False
