@@ -69,15 +69,15 @@ class AppUpdater:
             # Извлекаем версию из тега (v1.0.0 → 1.0.0)
             tag = data.get('tag_name', 'v0.0.0').lstrip('v')
             
-            # Ищем Helper.exe в assets
+            # Ищем Helper_Installer.exe в assets
             download_url = None
             for asset in data.get('assets', []):
-                if asset['name'] == 'Helper.exe':
+                if asset['name'] == 'Helper_Installer.exe':
                     download_url = asset['browser_download_url']
                     break
             
             if not download_url:
-                print("Helper.exe не найден в релизе!")
+                print("Helper_Installer.exe не найден в релизе!")
                 return None, None
             
             return tag, download_url
@@ -103,9 +103,9 @@ class AppUpdater:
             
             # Определяем путь для сохранения
             if getattr(sys, 'frozen', False):
-                save_path = Path(sys.executable).parent / "Helper_update.exe"
+                save_path = Path(sys.executable).parent / "Helper_Installer.exe"
             else:
-                save_path = Path("Helper_update.exe")
+                save_path = Path("Helper_Installer.exe")
             
             print(f"[DEBUG] Сохраняю в: {save_path}")
             

@@ -4,7 +4,9 @@
 import customtkinter as ctk
 from models.template_manager import TemplateManager
 from views.main_window import MainWindow
+from views.welcome_window import WelcomeWindow
 from config import UI_CONFIG
+from config.settings import PATHS
 
 
 def main():
@@ -15,6 +17,15 @@ def main():
     
     # Создание корневого окна
     root = ctk.CTk()
+    
+    # Проверка первого запуска
+    if PATHS.is_first_run():
+        # Показать приветственное окно
+        welcome = WelcomeWindow(root)
+        root.wait_window(welcome)  # Ждать закрытия окна приветствия
+        
+        # Отметить, что первый запуск завершен
+        PATHS.mark_first_run_complete()
     
     # Инициализация менеджера шаблонов
     template_manager = TemplateManager()

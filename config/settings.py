@@ -41,6 +41,18 @@ class PATHS:
     ICON_FILE = "icon.ico"
     UPDATER_EXE = "updater.exe"
     UPDATE_FILE = "Helper_update.exe"
+    FIRST_RUN_FLAG = os.path.join(APP_DATA_DIR, ".first_run_complete")
+    
+    @staticmethod
+    def is_first_run():
+        """Проверить, первый ли это запуск приложения"""
+        return not os.path.exists(PATHS.FIRST_RUN_FLAG)
+    
+    @staticmethod
+    def mark_first_run_complete():
+        """Отметить, что первый запуск завершен"""
+        os.makedirs(PATHS.APP_DATA_DIR, exist_ok=True)
+        Path(PATHS.FIRST_RUN_FLAG).touch()
     
     @staticmethod
     def get_version_path():

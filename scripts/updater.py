@@ -20,7 +20,7 @@ def update_application():
     else:
         app_dir = Path(__file__).parent
     
-    update_file = app_dir / "Helper_update.exe"
+    update_file = app_dir / "Helper_Installer.exe"
     main_file = app_dir / "Helper.exe"
     backup_file = app_dir / "Helper.exe.backup"
     

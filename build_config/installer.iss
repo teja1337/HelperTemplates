@@ -2,7 +2,7 @@
 ; Создает полноценный установщик для Windows
 
 #define MyAppName "Helper"
-#define MyAppVersion "3.0.0"
+#define MyAppVersion "3.0.1"
 #define MyAppPublisher "teja1337"
 #define MyAppURL "https://github.com/teja1337/HelperTemplates"
 #define MyAppExeName "Helper.exe"
