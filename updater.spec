@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['scripts\\updater.py'],
+    ['C:\\Code\\Helper\\scripts\\updater.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -35,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['icon.ico'],
+    icon=['C:\\Code\\Helper\\icon.ico'],
 )

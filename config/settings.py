@@ -6,7 +6,7 @@ from pathlib import Path
 
 # ==================== ОСНОВНОЕ ====================
 APP_NAME = "Template Helper"
-APP_TITLE_PANEL = "Work In Progress"  # Название панели для будущих фич
+APP_TITLE_PANEL = "TitlePanel"
 APP_AUTHOR = "Created by Nostro"
 
 # ==================== GITHUB ====================
@@ -50,12 +50,12 @@ class PATHS:
         if getattr(sys, 'frozen', False):
             # PyInstaller
             if hasattr(sys, '_MEIPASS'):
-                return Path(sys._MEIPASS) / PATHS.VERSION_FILE
+                return Path(sys._MEIPASS) / "data" / PATHS.VERSION_FILE
             else:
-                return Path(sys.executable).parent / PATHS.VERSION_FILE
+                return Path(sys.executable).parent / "data" / PATHS.VERSION_FILE
         else:
             # Запуск как скрипт
-            return Path(__file__).parent.parent / PATHS.VERSION_FILE
+            return Path(__file__).parent.parent / "data" / PATHS.VERSION_FILE
     
     @staticmethod
     def get_icon_paths():
@@ -163,3 +163,27 @@ class EMOJI:
     CHECK = "✅"
     CROSS = "❌"
     PARTY = "🎉"
+
+
+# ==================== ИКОНКИ (UNICODE СИМВОЛЫ) ====================
+class ICONS:
+    """Красивые Unicode иконки для интерфейса"""
+    # Навигация и управление
+    SETTINGS = "⚙"      # Cog
+    CHART = "📈"        # Chart increasing (улучшенный вариант)
+    TRASH = "🗑"        # Trash
+    
+    # Действия
+    COPY = "📋"         # Clipboard
+    EDIT = "✏"          # Pencil
+    PLUS = "✚"          # Plus
+    LOCK = "🔒"         # Lock
+    
+    # Статусы
+    CHECK = "✓"         # Check
+    CLOSE = "✕"         # Close
+    
+    @staticmethod
+    def get_font_path():
+        """Совместимость - всегда возвращает None для Unicode символов"""
+        return None

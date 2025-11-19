@@ -4,7 +4,6 @@
 import customtkinter as ctk
 from typing import TYPE_CHECKING
 import threading
-import time
 import json
 from pathlib import Path
 import sys
@@ -15,8 +14,10 @@ if TYPE_CHECKING:
 from views.template_widgets import CategoryHeader, TemplateWidget
 from utils.clipboard import copy_to_clipboard
 from utils.updater import AppUpdater
+from utils.icon_generator import EmojiIconButton
+from models.search_indexer import get_search_indexer
 from config.constants import COLORS, FONTS, SIZES
-from config.settings import MESSAGES, EMOJI, PATHS, APP_NAME, APP_TITLE_PANEL, APP_AUTHOR
+from config.settings import MESSAGES, EMOJI, PATHS, APP_NAME, APP_AUTHOR
 
 
 class MainWindow:
@@ -33,9 +34,31 @@ class MainWindow:
         self.root = root
         self.template_manager = template_manager
         self.is_always_on_top = False
+        self.search_query = ""  # Переменная для хранения текста поиска
+        
+        # Инициализируем поисковый индекс
+        self.search_indexer = get_search_indexer()
+        
+        # Флаги для предотвращения множественного открытия одних и тех же диалогов
+        self.add_template_dialog_open = False
+        self.edit_template_dialog_open = False
+        self.add_category_dialog_open = False
+        self.edit_category_dialog_open = False
+        self.settings_dialog_open = False
+        self.statistics_dialog_open = False
+        
+        # Кэш для оптимизации UI
+        self._widget_cache = {}
+        self._last_displayed_category = None
+        self._last_search_query = None
+        self._search_update_timer = None  # Таймер для debounce поиска
         
         self.setup_window()
         self.setup_ui()
+        
+        # Предзагрузка иконок в фоне для ускорения UI
+        self.root.after(100, EmojiIconButton.preload_common_icons)
+        
         self.update_templates_display()
         
         # Проверка обновлений при запуске
@@ -46,7 +69,7 @@ class MainWindow:
         """Получить версию приложения"""
         # Сначала пытаемся импортировать из version.py
         try:
-            from version import VERSION
+            from config.version import VERSION
             return VERSION
         except ImportError:
             pass
@@ -193,6 +216,9 @@ class MainWindow:
             on_add_template=self.add_template
         )
         
+        # Панель "Work In Progress" с кнопками инструментов
+        self.setup_wip_panel(main_frame)
+        
         # Область отображения шаблонов
         self.templates_frame = ctk.CTkFrame(main_frame, fg_color=COLORS.BG_DARK)
         self.templates_frame.pack(fill=ctk.BOTH, expand=True, padx=SIZES.PADDING_MEDIUM, pady=SIZES.PADDING_MEDIUM)
@@ -231,14 +257,295 @@ class MainWindow:
         """Показать временное сообщение в статус-баре"""
         self.status_right.configure(text=message, text_color=COLORS.SUCCESS)
         
-        # Запускаем таймер для скрытия сообщения
-        def clear_message():
-            time.sleep(duration / 1000)
-            self.status_right.configure(text="")
-        
-        threading.Thread(target=clear_message, daemon=True).start()
+        # Используем after вместо threading для лучшей производительности
+        self.root.after(duration, lambda: self.status_right.configure(text=""))
     
-    def create_custom_dialog(self, title: str, width: int, height: int) -> ctk.CTkToplevel:
+    def setup_wip_panel(self, parent) -> None:
+        """Настройка панели поиска"""
+        search_frame = ctk.CTkFrame(parent, fg_color=COLORS.BG_MEDIUM, corner_radius=SIZES.CORNER_RADIUS_LARGE)
+        search_frame.pack(fill=ctk.X, padx=SIZES.PADDING_MEDIUM, pady=(0, SIZES.PADDING_MEDIUM))
+        
+        # Иконка поиска (Twemoji)
+        search_icon_img = EmojiIconButton.get_ctk_image("🔍", size=16)
+        search_icon = ctk.CTkLabel(
+            search_frame,
+            text="",
+            image=search_icon_img,
+            text_color=COLORS.TEXT_SECONDARY
+        )
+        search_icon.pack(side=ctk.LEFT, padx=(SIZES.PADDING_LARGE, 5), pady=SIZES.PADDING_MEDIUM)
+        
+        # Поле поиска
+        self.search_var = ctk.StringVar()
+        self.search_var.trace("w", lambda name, index, mode: self.filter_templates_by_search(self.search_var.get()))
+        
+        search_entry = ctk.CTkEntry(
+            search_frame,
+            textvariable=self.search_var,
+            placeholder_text="Поиск по названию или содержимому...",
+            font=FONTS.TEXT,
+            fg_color=COLORS.BG_LIGHT,
+            text_color=COLORS.TEXT_PRIMARY,
+            border_color=COLORS.BORDER_DEFAULT,
+            border_width=1,
+            corner_radius=SIZES.CORNER_RADIUS_SMALL,
+            height=32
+        )
+        search_entry.pack(side=ctk.LEFT, fill=ctk.X, expand=True, padx=(0, SIZES.PADDING_LARGE), pady=SIZES.PADDING_MEDIUM)
+    
+    def filter_templates_by_search(self, search_text: str) -> None:
+        """Фильтрация шаблонов по тексту поиска с debounce"""
+        # Отменяем предыдущий таймер обновления
+        if self._search_update_timer:
+            self.root.after_cancel(self._search_update_timer)
+        
+        # Сохраняем запрос
+        self.search_query = search_text.lower().strip()
+        
+        # Запускаем обновление через 300мс (после паузы в наборе)
+        self._search_update_timer = self.root.after(300, self._delayed_update)
+    
+    def _delayed_update(self) -> None:
+        """Отложенное обновление после паузы в наборе"""
+        self._search_update_timer = None
+        self.update_templates_display()
+    
+    def show_statistics_dialog(self) -> None:
+        """Показать диалоговое окно со статистикой всех шаблонов"""
+        # Проверка: если диалог уже открыт, не создавать новый
+        if self.statistics_dialog_open:
+            return
+        
+        current_category = self.category_header.get_selected_category()
+        if not current_category:
+            self.show_status_message("Выберите категорию сначала")
+            return
+        
+        # Получаем все шаблоны и сортируем по количеству копирований
+        all_templates = self.template_manager.get_templates(current_category)
+        sorted_templates = sorted(
+            all_templates, 
+            key=lambda t: t.get('stats', {}).get('usage_count', 0), 
+            reverse=True
+        )
+        
+        # Фильтруем только те, у которых есть статистика
+        templates_with_stats = [t for t in sorted_templates if t.get('stats', {}).get('usage_count', 0) > 0]
+        
+        if not templates_with_stats:
+            self.show_status_message("Статистика ещё недоступна")
+            return
+        
+        self.statistics_dialog_open = True
+        
+        # Обработчик закрытия окна
+        def on_close():
+            self.statistics_dialog_open = False
+        
+        # Создаём диалоговое окно
+        stats_dialog = ctk.CTkToplevel(self.root)
+        stats_dialog.title("Статистика")
+        stats_dialog.geometry("600x500")
+        stats_dialog.protocol("WM_DELETE_WINDOW", lambda: [on_close(), stats_dialog.destroy()])
+        
+        # Устанавливаем иконку
+        try:
+            icon_paths = PATHS.get_icon_paths()
+            for path in icon_paths:
+                if path and path.exists():
+                    stats_dialog.iconbitmap(str(path))
+                    break
+        except:
+            pass
+        
+        # Убеждаемся что окно будет поверх всегда
+        stats_dialog.attributes("-topmost", True)
+        stats_dialog.after(100, lambda: stats_dialog.lift())
+        stats_dialog.after(100, lambda: stats_dialog.focus_force())
+        
+        stats_dialog.resizable(False, False)
+        
+        # Основной фрейм
+        main_frame = ctk.CTkFrame(stats_dialog, fg_color="transparent")
+        main_frame.pack(fill=ctk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Заголовок
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text=f"Статистика копирований в '{current_category}'",
+            font=("Segoe UI", 14, "bold"),
+            text_color="#FFFFFF"
+        )
+        title_label.pack(anchor="w", pady=(0, 15))
+        
+        # Создаём скролируемый фрейм для списка шаблонов
+        scrollable_frame = ctk.CTkScrollableFrame(
+            main_frame,
+            fg_color="transparent",
+            corner_radius=6
+        )
+        scrollable_frame.pack(fill=ctk.BOTH, expand=True, pady=(0, 15))
+        
+        # Список всех шаблонов со статистикой
+        for idx, template in enumerate(templates_with_stats, 1):
+            usage_count = template.get('stats', {}).get('usage_count', 0)
+            
+            item_frame = ctk.CTkFrame(scrollable_frame, fg_color="transparent")
+            item_frame.pack(fill=ctk.X, pady=8)
+            
+            # Ранг
+            rank_label = ctk.CTkLabel(
+                item_frame,
+                text=f"#{idx}",
+                font=("Segoe UI", 11, "bold"),
+                text_color="#FFD700",
+                width=30
+            )
+            rank_label.pack(side=ctk.LEFT, padx=(0, 10))
+            
+            # Название
+            title = ctk.CTkLabel(
+                item_frame,
+                text=template.get('title', 'Template'),
+                font=("Segoe UI", 11),
+                text_color="#FFFFFF",
+                anchor="w"
+            )
+            title.pack(side=ctk.LEFT, fill=ctk.X, expand=True)
+            
+            # Счётчик
+            count_label = ctk.CTkLabel(
+                item_frame,
+                text=f"{usage_count}x",
+                font=("Segoe UI", 11, "bold"),
+                text_color="#1E90FF"
+            )
+            count_label.pack(side=ctk.RIGHT, padx=(10, 0))
+        
+        # Кнопка закрытия
+        btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        btn_frame.pack(fill=ctk.X, pady=(0, 0))
+        
+        close_btn = ctk.CTkButton(
+            btn_frame,
+            text="Закрыть",
+            command=lambda: [on_close(), stats_dialog.destroy()],
+            width=100,
+            height=32
+        )
+        close_btn.pack(side=ctk.RIGHT)
+        
+        # Горячие клавиши
+        stats_dialog.bind('<Escape>', lambda e: [on_close(), stats_dialog.destroy()])
+        stats_dialog.bind('<Return>', lambda e: [on_close(), stats_dialog.destroy()])
+        
+        # Центрируем окно
+        stats_dialog.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (stats_dialog.winfo_width() // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (stats_dialog.winfo_height() // 2)
+        stats_dialog.geometry(f"+{x}+{y}")
+    
+    def show_settings_dialog(self) -> None:
+        """Показать диалоговое окно с настройками"""
+        # Проверка: если диалог уже открыт, не создавать новый
+        if self.settings_dialog_open:
+            return
+        
+        self.settings_dialog_open = True
+        
+        # Обработчик закрытия окна
+        def on_close():
+            self.settings_dialog_open = False
+        
+        # Создаём диалоговое окно
+        settings_dialog = ctk.CTkToplevel(self.root)
+        settings_dialog.title("Настройки")
+        settings_dialog.geometry("400x250")
+        settings_dialog.protocol("WM_DELETE_WINDOW", lambda: [on_close(), settings_dialog.destroy()])
+        
+        # Устанавливаем иконку
+        try:
+            icon_paths = PATHS.get_icon_paths()
+            for path in icon_paths:
+                if path and path.exists():
+                    settings_dialog.iconbitmap(str(path))
+                    break
+        except:
+            pass
+        
+        # Убеждаемся что окно будет поверх всегда
+        settings_dialog.attributes("-topmost", True)
+        settings_dialog.after(100, lambda: settings_dialog.lift())
+        settings_dialog.after(100, lambda: settings_dialog.focus_force())
+        
+        settings_dialog.resizable(False, False)
+        
+        # Основной фрейм
+        main_frame = ctk.CTkFrame(settings_dialog, fg_color="transparent")
+        main_frame.pack(fill=ctk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Заголовок
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text="Настройки приложения",
+            font=("Segoe UI", 14, "bold"),
+            text_color="#FFFFFF"
+        )
+        title_label.pack(anchor="w", pady=(0, 20))
+        
+        # Раздел статистики
+        stats_section = ctk.CTkLabel(
+            main_frame,
+            text="Статистика:",
+            font=("Segoe UI", 11, "bold"),
+            text_color="#FFFFFF"
+        )
+        stats_section.pack(anchor="w", pady=(0, 10))
+        
+        # Кнопка сброса статистики
+        def reset_statistics():
+            current_category = self.category_header.get_selected_category()
+            if current_category:
+                self.template_manager.reset_statistics(current_category)
+                self.show_status_message("✓ Статистика сброшена")
+                self.force_update_templates_display()
+                on_close()
+                settings_dialog.destroy()
+        
+        reset_btn = ctk.CTkButton(
+            main_frame,
+            text="Сбросить статистику",
+            command=reset_statistics,
+            height=32,
+            fg_color="#ff6b6b",
+            hover_color="#ff5252",
+            text_color="#FFFFFF"
+        )
+        reset_btn.pack(fill=ctk.X, pady=5)
+        
+        # Кнопка закрытия
+        btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        btn_frame.pack(fill=ctk.X, pady=(20, 0))
+        
+        close_btn = ctk.CTkButton(
+            btn_frame,
+            text="Закрыть",
+            command=lambda: [on_close(), settings_dialog.destroy()],
+            width=100,
+            height=32
+        )
+        close_btn.pack(side=ctk.RIGHT)
+        
+        # Горячие клавиши
+        settings_dialog.bind('<Escape>', lambda e: [on_close(), settings_dialog.destroy()])
+        
+        # Центрируем окно
+        settings_dialog.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (settings_dialog.winfo_width() // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (settings_dialog.winfo_height() // 2)
+        settings_dialog.geometry(f"+{x}+{y}")
+    
+    def create_custom_dialog(self, title: str, width: int, height: int, on_close_callback=None) -> ctk.CTkToplevel:
         """Создает диалоговое окно с кастомным заголовком без рамок"""
         dialog = ctk.CTkToplevel(self.root)
         dialog.title(title)
@@ -285,6 +592,11 @@ class MainWindow:
         dialog_title_label.pack(side=ctk.LEFT, padx=12, pady=0)
         
         # Кнопка закрытия диалога
+        def close_dialog():
+            if on_close_callback:
+                on_close_callback()
+            dialog.destroy()
+        
         dialog_close_button = ctk.CTkButton(
             dialog_titlebar,
             text="✕",
@@ -294,7 +606,7 @@ class MainWindow:
             fg_color="transparent",
             hover_color="#e81123",
             text_color="#e0e0e0",
-            command=dialog.destroy,
+            command=close_dialog,
             corner_radius=0,
             border_width=0
         )
@@ -335,14 +647,51 @@ class MainWindow:
         titlebar.pack(side=ctk.TOP, fill=ctk.X, padx=0, pady=0)
         titlebar.pack_propagate(False)
         
-        # Название приложения слева
-        title_label = ctk.CTkLabel(
+        # Кнопка "Настройки" - только иконка
+        settings_image = EmojiIconButton.get_ctk_image("🔨", size=20, bg_color="transparent")
+        settings_btn = ctk.CTkButton(
             titlebar,
-            text=APP_TITLE_PANEL,
-            font=FONTS.TITLE,
-            text_color=COLORS.TEXT_SECONDARY
+            text="",
+            image=settings_image,
+            command=self.show_settings_dialog,
+            font=("Segoe UI", 10),
+            width=28,
+            height=28,
+            fg_color="transparent",
+            hover_color="#5a5a5a",
+            text_color="#ffffff",
+            corner_radius=4,
+            border_width=0
         )
-        title_label.pack(side=ctk.LEFT, padx=15, pady=0)
+        settings_btn.pack(side=ctk.LEFT, padx=6, pady=6)
+        
+        # Разделитель
+        separator = ctk.CTkLabel(
+            titlebar,
+            text="|",
+            text_color="#666666",
+            font=("Segoe UI", 14)
+        )
+        separator.pack(side=ctk.LEFT, padx=4, pady=6)
+        
+        # Кнопка "Статистика" с иконкой
+        stats_image = EmojiIconButton.get_ctk_image("📊", size=20, bg_color="transparent")
+        stats_btn = ctk.CTkButton(
+            titlebar,
+            text="Статистика",
+            image=stats_image,
+            compound="left",
+            command=self.show_statistics_dialog,
+            font=("Segoe UI", 10),
+            width=115,
+            height=28,
+            fg_color="#4a4a4a",
+            hover_color="#5a5a5a",
+            text_color="#ffffff",
+            corner_radius=4,
+            border_width=0
+        )
+        stats_btn.pack(side=ctk.LEFT, padx=6, pady=6)
         
         # Кнопка закрепления (замочек) - единственная кнопка управления
         self.pin_button = ctk.CTkButton(
@@ -360,24 +709,31 @@ class MainWindow:
         )
         self.pin_button.pack(side=ctk.RIGHT, padx=5, pady=0)
         
-        # Авторство и версия справа (после замочка)
+        # Авторство и версия справа (после замочка) - кликабельная ссылка на GitHub
         info_frame = ctk.CTkFrame(titlebar, fg_color="transparent")
         info_frame.pack(side=ctk.RIGHT, padx=15, pady=0)
         
-        info_label = ctk.CTkLabel(
+        def open_github():
+            import webbrowser
+            webbrowser.open("https://github.com/teja1337")
+        
+        info_button = ctk.CTkButton(
             info_frame,
             text=f"{APP_AUTHOR} | v{self.get_app_version()}",
             font=FONTS.LABEL,
-            text_color=COLORS.TEXT_DISABLED
+            text_color=COLORS.TEXT_DISABLED,
+            fg_color="transparent",
+            hover_color=COLORS.HOVER_DARK,
+            command=open_github,
+            border_width=0,
+            corner_radius=4
         )
-        info_label.pack(side=ctk.TOP, pady=0)
+        info_button.pack(side=ctk.TOP, pady=0)
         
         # Функциональность перемещения окна
         self.drag_data = {"x": 0, "y": 0}
         titlebar.bind("<Button-1>", self.start_move)
         titlebar.bind("<B1-Motion>", self.do_move)
-        title_label.bind("<Button-1>", self.start_move)
-        title_label.bind("<B1-Motion>", self.do_move)
     
     def start_move(self, event):
         """Начинает перемещение окна"""
@@ -426,28 +782,52 @@ class MainWindow:
     
     def add_category(self) -> None:
         """Добавление новой категории с современным диалогом"""
+        # Проверка: если диалог уже открыт, не создавать новый
+        if self.add_category_dialog_open:
+            return
+        
+        self.add_category_dialog_open = True
+        
         category_name = self.show_modern_dialog(
             "Новая категория", 
             "Введите название категории:"
         )
+        
+        self.add_category_dialog_open = False
+        
         if category_name:
             if self.template_manager.add_category(category_name):
+                # ОПТИМИЗАЦИЯ: Обновляем индекс поиска
+                self.search_indexer.build_index(self.template_manager)
                 self.category_header.update_categories(self.template_manager.get_categories())
                 self.category_header.set_selected_category(category_name)
-                self.update_templates_display()
+                self.force_update_templates_display()
                 self.show_status_message("✓ Категория добавлена")
             else:
                 self.show_status_message("✗ Ошибка добавления категории")
     
     def edit_category(self) -> None:
         """Редактирование текущей категории с опциями переименования и удаления"""
+        # Проверка: если диалог уже открыт, не создавать новый
+        if self.edit_category_dialog_open:
+            return
+        
         current_category = self.category_header.get_selected_category()
         if not current_category:
             self.show_status_message("⚠ Сначала выберите категорию")
             return
         
+        self.edit_category_dialog_open = True
+        
+        # Обработчик закрытия окна
+        def on_close():
+            self.edit_category_dialog_open = False
+        
         # Создаем кастомный диалог
-        dialog = self.create_custom_dialog("Редактирование категории", 450, 235)
+        dialog = self.create_custom_dialog("Редактирование категории", 450, 235, on_close_callback=on_close)
+        
+        # Убираем старый обработчик WM_DELETE_WINDOW
+        dialog.protocol("WM_DELETE_WINDOW", on_close)
         
         # Основной фрейм
         main_frame = ctk.CTkFrame(dialog.content_frame, fg_color="#1a1a1a")
@@ -490,19 +870,22 @@ class MainWindow:
                 return
             
             if new_name == current_category:
+                self.edit_category_dialog_open = False
                 dialog.destroy()
                 return
             
             if self.template_manager.rename_category(current_category, new_name):
                 self.category_header.update_categories(self.template_manager.get_categories())
                 self.category_header.set_selected_category(new_name)
-                self.update_templates_display()
+                self.force_update_templates_display()
                 self.show_status_message("✓ Категория переименована")
+                self.edit_category_dialog_open = False
                 dialog.destroy()
             else:
                 self.show_status_message("✗ Ошибка переименования")
         
         def on_delete():
+            self.edit_category_dialog_open = False
             dialog.destroy()
             # Подтверждение удаления
             confirm_dialog = self.create_custom_dialog("Подтверждение", 400, 195)
@@ -528,8 +911,9 @@ class MainWindow:
                     if categories:
                         self.category_header.set_selected_category(categories[0])
                     
-                    self.update_templates_display()
+                    self.force_update_templates_display()
                     self.show_status_message("✓ Категория удалена")
+                    self.edit_category_dialog_open = False
                     confirm_dialog.destroy()
                 else:
                     self.show_status_message("✗ Ошибка удаления")
@@ -539,6 +923,7 @@ class MainWindow:
             ctk.CTkButton(btn_confirm_frame, text="Нет", command=confirm_dialog.destroy, width=100).pack(side=ctk.LEFT, padx=5)
         
         def on_cancel():
+            self.edit_category_dialog_open = False
             dialog.destroy()
         
         # Кнопка переименования
@@ -575,13 +960,26 @@ class MainWindow:
     
     def add_template(self) -> None:
         """Добавление нового шаблона в текущую категорию"""
+        # Проверка: если диалог уже открыт, не создавать новый
+        if self.add_template_dialog_open:
+            return
+        
         current_category = self.category_header.get_selected_category()
         if not current_category:
             self.show_status_message("⚠ Сначала выберите категорию")
             return
         
+        self.add_template_dialog_open = True
+        
+        # Обработчик закрытия окна
+        def on_close():
+            self.add_template_dialog_open = False
+        
         # Создаем кастомный диалог для добавления шаблона
-        dialog = self.create_custom_dialog("Добавить новый шаблон", 750, 700)
+        dialog = self.create_custom_dialog("Добавить новый шаблон", 750, 700, on_close_callback=on_close)
+        
+        # Убираем старый обработчик WM_DELETE_WINDOW
+        dialog.protocol("WM_DELETE_WINDOW", on_close)
         
         # Основной фрейм диалога
         main_frame = ctk.CTkFrame(dialog.content_frame, fg_color="#1a1a1a")
@@ -646,21 +1044,27 @@ class MainWindow:
                 return
             
             if self.template_manager.add_template(current_category, template_title, template_text):
+                # ОПТИМИЗАЦИЯ: Обновляем индекс поиска
+                self.search_indexer.build_index(self.template_manager)
                 self.show_status_message("✓ Шаблон добавлен")
-                self.update_templates_display()
+                self.force_update_templates_display()
+                self.add_template_dialog_open = False
                 dialog.destroy()
             else:
                 self.show_status_message("✗ Ошибка добавления")
         
         def on_cancel():
+            self.add_template_dialog_open = False
             dialog.destroy()
         
+        save_img = EmojiIconButton.get_ctk_image("💾", size=16)
         ctk.CTkButton(
             btn_frame,
-            text="💾 Сохранить",
+            text="Сохранить",
+            image=save_img,
+            compound="left",
             command=on_save,
-            width=150,
-            font=("Segoe UI Emoji", 12)
+            width=150
         ).pack(side=ctk.LEFT, padx=5)
         
         ctk.CTkButton(
@@ -708,6 +1112,14 @@ class MainWindow:
             result.append(None)
             dialog.destroy()
         
+        # Обработчик закрытия окна (в том числе крестик)
+        def on_dialog_close():
+            self.add_category_dialog_open = False
+            if not result:  # Если результат не добавлен (закрыто крестиком)
+                on_cancel()
+        
+        dialog.protocol("WM_DELETE_WINDOW", on_dialog_close)
+        
         # Кнопки
         btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         btn_frame.pack(pady=15)
@@ -723,12 +1135,17 @@ class MainWindow:
         return result[0] if result else None
     
     def update_templates_display(self) -> None:
-        """Обновление отображения шаблонов с современным дизайном"""
+        """Обновление отображения шаблонов"""
+        current_category = self.category_header.get_selected_category()
+        
+        # Сохраняем текущее состояние
+        self._last_displayed_category = current_category
+        self._last_search_query = self.search_query
+        
         # Очистка текущего отображения
         for widget in self.templates_frame.winfo_children():
             widget.destroy()
         
-        current_category = self.category_header.get_selected_category()
         if not current_category:
             # Плейсхолдер при отсутствии выбранной категории
             placeholder = ctk.CTkLabel(
@@ -740,27 +1157,67 @@ class MainWindow:
             placeholder.pack(expand=True, pady=100)
             return
         
-        templates = self.template_manager.get_templates(current_category)
+        # Получаем ВСЕ шаблоны из кэша
+        templates = self.template_manager.get_templates_cached(current_category)
+        
+        # Фильтруем если есть поисковый запрос
+        if self.search_query:
+            templates = [t for t in templates 
+                        if self.search_query in t.get('title', '').lower() 
+                        or self.search_query in t.get('text', '').lower()]
         
         if not templates:
             # Плейсхолдер для пустой категории
-            empty_label = ctk.CTkLabel(
-                self.templates_frame, 
-                text="📝 В этой категории пока нет шаблонов", 
-                text_color="#a0a0a0",
-                font=("Segoe UI", 12)
-            )
+            if self.search_query:
+                empty_label = ctk.CTkLabel(
+                    self.templates_frame, 
+                    text=f'Ничего не найдено: "{self.search_query}"', 
+                    text_color="#a0a0a0",
+                    font=("Segoe UI", 12)
+                )
+            else:
+                empty_label = ctk.CTkLabel(
+                    self.templates_frame, 
+                    text="В этой категории пока нет шаблонов", 
+                    text_color="#a0a0a0",
+                    font=("Segoe UI", 12)
+                )
             empty_label.pack(expand=True, pady=100)
             return
         
+        # Создание контейнера для содержимого
+        content_container = ctk.CTkFrame(self.templates_frame, fg_color="transparent")
+        content_container.pack(fill=ctk.BOTH, expand=True)
+        
         # Создание современной прокручиваемой области
-        self.create_modern_scrollable_frame(templates)
+        self.create_modern_scrollable_frame(templates, content_container, current_category)
     
-    def create_modern_scrollable_frame(self, templates: list) -> None:
+    def force_update_templates_display(self) -> None:
+        """Принудительное обновление отображения"""
+        self._last_displayed_category = None
+        self._last_search_query = None
+        self.update_templates_display()
+    
+    def create_modern_scrollable_frame(self, templates: list, parent_container, current_category: str) -> None:
         """Создание современной прокручиваемой области для шаблонов"""
+        # ОПТИМИЗАЦИЯ: Поиск уже выполнен в update_templates_display,
+        # если используются search_results, то фильтрация уже сделана
+        filtered_templates = templates
+        
         # Основной контейнер
-        container = ctk.CTkFrame(self.templates_frame, fg_color="transparent")
+        container = ctk.CTkFrame(parent_container, fg_color="transparent")
         container.pack(fill=ctk.BOTH, expand=True)
+        
+        # Если нет результатов поиска
+        if not filtered_templates and self.search_query:
+            no_results = ctk.CTkLabel(
+                container,
+                text=f'Шаблоны не найдены: "{self.search_query}"',
+                text_color="#a0a0a0",
+                font=("Segoe UI", 12)
+            )
+            no_results.pack(expand=True, pady=100)
+            return
         
         # Canvas и скроллбар
         canvas = ctk.CTkCanvas(
@@ -814,28 +1271,159 @@ class MainWindow:
         scrollable_frame.bind("<Button-5>", on_mousewheel)
         
         # Отображение каждого шаблона
-        for index, template in enumerate(templates):
+        templates_full = self.template_manager.get_templates_cached(current_category)
+        for idx, template in enumerate(filtered_templates):
+            # Найди реальный индекс в полном списке
+            real_idx = None
+            for full_idx, full_tpl in enumerate(templates_full):
+                if full_tpl.get('title') == template.get('title'):
+                    real_idx = full_idx
+                    break
+            
             TemplateWidget(
                 parent=scrollable_frame,
                 template=template,
-                template_index=index,
+                template_index=real_idx,
                 copy_callback=self.copy_template_text,
-                edit_callback=self.edit_template
+                edit_callback=self.edit_template_with_index,
+                pin_callback=self.toggle_pin_template_by_name,
+                stats_callback=self.show_template_stats
             )
         
         # Упаковка элементов
         canvas.pack(side="left", fill="both", expand=True, padx=(0, 5))
         scrollbar.pack(side="right", fill="y")
     
-    def copy_template_text(self, text: str) -> None:
-        """Копирование текста шаблона в буфер обмена"""
+    def display_top_used_templates(self, parent_container, category: str) -> None:
+        """Отображение топ 3 используемых шаблонов"""
+        top_templates = self.template_manager.get_top_used_templates(category, limit=3)
+        
+        if not top_templates or sum(t.get('stats', {}).get('usage_count', 0) for t in top_templates) == 0:
+            # Не показываем, если нет использованных шаблонов
+            return
+        
+        # Секция топ используемых
+        top_frame = ctk.CTkFrame(parent_container, fg_color=COLORS.BG_MEDIUM, corner_radius=10)
+        top_frame.pack(fill=ctk.X, pady=(0, 15), padx=0)
+        
+        # Заголовок
+        header_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
+        header_frame.pack(fill=ctk.X, padx=15, pady=(10, 5))
+        
+        header_label = ctk.CTkLabel(
+            header_frame,
+            text="🏆 Топ используемых шаблонов",
+            font=("Segoe UI", 12, "bold"),
+            text_color="#1E90FF"
+        )
+        header_label.pack(anchor="w")
+        
+        # Список топ шаблонов
+        for idx, template in enumerate(top_templates, 1):
+            usage_count = template.get('stats', {}).get('usage_count', 0)
+            if usage_count == 0:
+                continue
+            
+            item_frame = ctk.CTkFrame(top_frame, fg_color="transparent")
+            item_frame.pack(fill=ctk.X, padx=15, pady=3)
+            
+            # Ранг
+            rank_label = ctk.CTkLabel(
+                item_frame,
+                text=f"#{idx}",
+                font=("Segoe UI", 11, "bold"),
+                text_color="#FFD700",
+                width=30
+            )
+            rank_label.pack(side=ctk.LEFT, padx=(0, 10))
+            
+            # Название и количество использований
+            info_label = ctk.CTkLabel(
+                item_frame,
+                text=f"{template.get('title', 'Шаблон')} ({usage_count}x)",
+                font=("Segoe UI", 11),
+                text_color="#FFFFFF",
+                anchor="w"
+            )
+            info_label.pack(side=ctk.LEFT, fill=ctk.X, expand=True)
+    
+    def copy_template_text(self, template: dict) -> None:
+        """Копирование текста шаблона в буфер обмена и увеличение счётчика использования"""
+        text = template.get('text', '')
         if copy_to_clipboard(self.root, text):
+            # Увеличиваем счётчик использования (без перерисовки)
+            current_category = self.category_header.get_selected_category()
+            if current_category:
+                self.template_manager.increment_usage(current_category, template)
             self.show_status_message("✓ Текст скопирован")
         else:
             self.show_status_message("✗ Ошибка копирования")
     
+    def toggle_pin_template(self, template_index: int) -> None:
+        """Переключение закрепления шаблона (по индексу - DEPRECATED)"""
+        current_category = self.category_header.get_selected_category()
+        if not current_category:
+            return
+        
+        if self.template_manager.toggle_pin_template(current_category, template_index):
+            self.force_update_templates_display()
+        else:
+            self.show_status_message("✗ Ошибка закрепления")
+    
+    def toggle_pin_template_by_name(self, template: dict) -> None:
+        """Переключение закрепления шаблона (по названию)"""
+        current_category = self.category_header.get_selected_category()
+        if not current_category:
+            return
+        
+        if self.template_manager.toggle_pin_template_by_name(current_category, template):
+            # Получаем новое состояние шаблона (ПОСЛЕ переключения)
+            templates = self.template_manager.get_templates(current_category)
+            for tpl in templates:
+                if tpl.get('title') == template.get('title'):
+                    is_pinned = tpl.get('pinned', False)
+                    break
+            else:
+                is_pinned = False
+            
+            # Обновляем отображение после изменения закрепления
+            self.force_update_templates_display()
+            
+            # Показываем сообщение с новым состоянием
+            if is_pinned:
+                self.show_status_message("⭐ Шаблон закреплён")
+            else:
+                self.show_status_message("☆ Закрепление снято")
+        else:
+            self.show_status_message("✗ Ошибка закрепления")
+    
+    def edit_template_with_index(self, template: dict, template_index: int = None) -> None:
+        """Редактирование шаблона с индексом или по названию"""
+        current_category = self.category_header.get_selected_category()
+        if not current_category:
+            return
+        
+        # Если индекс не передан, ищем по названию (для обратной совместимости)
+        if template_index is None:
+            templates = self.template_manager.get_templates(current_category)
+            for idx, tpl in enumerate(templates):
+                if tpl.get('title') == template.get('title'):
+                    template_index = idx
+                    break
+        
+        if template_index is None:
+            self.show_status_message("✗ Шаблон не найден")
+            return
+        
+        # Вызываем оригинальный метод редактирования
+        self.edit_template(template_index)
+    
     def edit_template(self, template_index: int) -> None:
         """Редактирование выбранного шаблона"""
+        # Проверка: если диалог уже открыт, не создавать новый
+        if self.edit_template_dialog_open:
+            return
+        
         current_category = self.category_header.get_selected_category()
         if not current_category:
             self.show_status_message("⚠ Сначала выберите категорию")
@@ -846,10 +1434,19 @@ class MainWindow:
             self.show_status_message("⚠ Ошибка: шаблон не найден")
             return
         
+        self.edit_template_dialog_open = True
+        
         template = templates[template_index]
         
+        # Обработчик закрытия окна
+        def on_close():
+            self.edit_template_dialog_open = False
+        
         # Создаем кастомный диалог для редактирования шаблона
-        dialog = self.create_custom_dialog("Редактировать шаблон", 750, 700)
+        dialog = self.create_custom_dialog("Редактировать шаблон", 750, 700, on_close_callback=on_close)
+        
+        # Убираем старый обработчик WM_DELETE_WINDOW
+        dialog.protocol("WM_DELETE_WINDOW", on_close)
         
         # Основной фрейм диалога
         main_frame = ctk.CTkFrame(dialog.content_frame, fg_color="#1a1a1a")
@@ -914,13 +1511,17 @@ class MainWindow:
                 return
             
             if self.template_manager.edit_template(current_category, template_index, template_title, template_text):
+                # ОПТИМИЗАЦИЯ: Обновляем индекс поиска
+                self.search_indexer.build_index(self.template_manager)
                 self.show_status_message("✓ Шаблон обновлен")
-                self.update_templates_display()
+                self.force_update_templates_display()
+                self.edit_template_dialog_open = False
                 dialog.destroy()
             else:
                 self.show_status_message("✗ Ошибка сохранения")
         
         def on_delete():
+            self.edit_template_dialog_open = False
             dialog.destroy()
             # Подтверждение удаления
             confirm_dialog = self.create_custom_dialog("Подтверждение", 350, 175)
@@ -940,8 +1541,10 @@ class MainWindow:
             
             def confirm_delete():
                 if self.template_manager.delete_template(current_category, template_index):
+                    # ОПТИМИЗАЦИЯ: Обновляем индекс поиска
+                    self.search_indexer.build_index(self.template_manager)
                     self.show_status_message("✓ Шаблон удален")
-                    self.update_templates_display()
+                    self.force_update_templates_display()
                     confirm_dialog.destroy()
                 else:
                     self.show_status_message("✗ Ошибка удаления")
@@ -951,24 +1554,29 @@ class MainWindow:
             ctk.CTkButton(btn_confirm_frame, text="Нет", command=confirm_dialog.destroy, width=100).pack(side=ctk.LEFT, padx=5)
         
         def on_cancel():
+            self.edit_template_dialog_open = False
             dialog.destroy()
         
+        save_img2 = EmojiIconButton.get_ctk_image("💾", size=16)
         ctk.CTkButton(
             btn_frame,
-            text="💾 Сохранить",
+            text="Сохранить",
+            image=save_img2,
+            compound="left",
             command=on_save,
-            width=150,
-            font=("Segoe UI Emoji", 12)
+            width=150
         ).pack(side=ctk.LEFT, padx=5)
         
+        delete_img = EmojiIconButton.get_ctk_image("🗑️", size=16)
         ctk.CTkButton(
             btn_frame,
-            text="🗑️ Удалить",
+            text="Удалить",
+            image=delete_img,
+            compound="left",
             command=on_delete,
             fg_color="#d32f2f",
             hover_color="#b71c1c",
-            width=150,
-            font=("Segoe UI Emoji", 12)
+            width=150
         ).pack(side=ctk.LEFT, padx=5)
         
         ctk.CTkButton(
@@ -1000,6 +1608,16 @@ class MainWindow:
         dialog.title("Доступно обновление")
         dialog.geometry("450x250")
         dialog.resizable(False, False)
+        
+        # Устанавливаем иконку
+        try:
+            icon_paths = PATHS.get_icon_paths()
+            for path in icon_paths:
+                if path and path.exists():
+                    dialog.iconbitmap(str(path))
+                    break
+        except:
+            pass
         
         # Центрируем диалог
         dialog.update_idletasks()
@@ -1101,6 +1719,80 @@ class MainWindow:
             # Показываем ошибку
             self.root.after(0, lambda: self._show_update_error(dialog))
     
+    def show_template_stats(self, template: dict) -> None:
+        """Показать статистику использования шаблона"""
+        current_category = self.category_header.get_selected_category()
+        if not current_category:
+            return
+        
+        # Получаем статистику
+        stats = self.template_manager.get_template_stats(current_category, template)
+        usage_count = stats.get('usage_count', 0) if stats else 0
+        
+        # Создаём диалоговое окно
+        stats_dialog = ctk.CTkToplevel(self.root)
+        stats_dialog.title("Статистика использования")
+        stats_dialog.geometry("400x250")
+        
+        # Устанавливаем иконку
+        try:
+            icon_paths = PATHS.get_icon_paths()
+            for path in icon_paths:
+                if path and path.exists():
+                    stats_dialog.iconbitmap(str(path))
+                    break
+        except:
+            pass
+        
+        stats_dialog.attributes("-topmost", True)
+        stats_dialog.resizable(False, False)
+        
+        # Основной фрейм
+        main_frame = ctk.CTkFrame(stats_dialog, fg_color="transparent")
+        main_frame.pack(fill=ctk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Название шаблона
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text=template.get('title', 'Шаблон'),
+            font=("Segoe UI", 14, "bold"),
+            text_color="#FFFFFF"
+        )
+        title_label.pack(anchor="w", pady=(0, 15))
+        
+        # Статистика
+        stats_text = f"👁️ Использован {usage_count} раз"
+        stats_label = ctk.CTkLabel(
+            main_frame,
+            text=stats_text,
+            font=("Segoe UI", 13),
+            text_color="#1E90FF"
+        )
+        stats_label.pack(anchor="w", pady=10)
+        
+        # Кнопка закрытия
+        btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        btn_frame.pack(fill=ctk.X, pady=(20, 0))
+        
+        close_btn = ctk.CTkButton(
+            btn_frame,
+            text="Закрыть",
+            command=stats_dialog.destroy,
+            width=100,
+            height=32
+        )
+        close_btn.pack(side=ctk.RIGHT)
+        
+        # Горячие клавиши
+        stats_dialog.bind('<Escape>', lambda e: stats_dialog.destroy())
+        stats_dialog.bind('<Return>', lambda e: stats_dialog.destroy())
+        
+        # Центрируем окно
+        stats_dialog.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (stats_dialog.winfo_width() // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (stats_dialog.winfo_height() // 2)
+        stats_dialog.geometry(f"+{x}+{y}")
+    
     def _show_update_error(self, parent_dialog):
         """Показать ошибку обновления"""
         parent_dialog.destroy()
@@ -1108,6 +1800,17 @@ class MainWindow:
         error_dialog = ctk.CTkToplevel(self.root)
         error_dialog.title("Ошибка обновления")
         error_dialog.geometry("400x150")
+        
+        # Устанавливаем иконку
+        try:
+            icon_paths = PATHS.get_icon_paths()
+            for path in icon_paths:
+                if path and path.exists():
+                    error_dialog.iconbitmap(str(path))
+                    break
+        except:
+            pass
+        
         error_dialog.attributes("-topmost", True)
         
         label = ctk.CTkLabel(

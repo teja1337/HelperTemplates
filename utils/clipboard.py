@@ -16,6 +16,11 @@ def copy_to_clipboard(root: 'tk.Tk', text: str) -> bool:
         bool: Успешность операции
     """
     try:
+        # Ограничиваем размер текста (некоторые буфера обмена не могут работать с очень большими текстами)
+        MAX_CLIPBOARD_SIZE = 10 * 1024 * 1024  # 10 MB
+        if len(text.encode('utf-8')) > MAX_CLIPBOARD_SIZE:
+            return False
+        
         root.clipboard_clear()
         root.clipboard_append(text)
         root.update()  # Сохраняем в буфере после закрытия приложения

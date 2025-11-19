@@ -5,6 +5,7 @@ import customtkinter as ctk
 from typing import Callable
 from config.constants import COLORS, FONTS, SIZES
 from config.settings import EMOJI
+from utils.icon_generator import EmojiIconButton
 
 
 class ClickableComboBox(ctk.CTkComboBox):
@@ -104,19 +105,24 @@ class TemplateWidget:
     
     Attributes:
         parent: Родительский виджет
-        template (dict): Данные шаблона (title, text)
+        template (dict): Данные шаблона (title, text, pinned, stats)
         template_index (int): Индекс шаблона в списке
         copy_callback (Callable): Функция для копирования текста
         edit_callback (Callable): Функция для редактирования шаблона
+        pin_callback (Callable): Функция для закрепления шаблона
+        stats_callback (Callable): Функция для показа статистики
     """
     
     def __init__(self, parent, template: dict, template_index: int, 
-                 copy_callback: Callable, edit_callback: Callable):
+                 copy_callback: Callable, edit_callback: Callable, pin_callback: Callable,
+                 stats_callback: Callable = None):
         self.parent = parent
         self.template = template
         self.template_index = template_index
         self.copy_callback = copy_callback
         self.edit_callback = edit_callback
+        self.pin_callback = pin_callback
+        self.stats_callback = stats_callback
         
         self.create_widget()
     
@@ -135,6 +141,7 @@ class TemplateWidget:
         title_frame.pack(fill=ctk.X, pady=(SIZES.PADDING_LARGE, SIZES.PADDING_MEDIUM), 
                         padx=SIZES.PADDING_LARGE)
         
+        # Название шаблона
         title_label = ctk.CTkLabel(
             title_frame, 
             text=self.template['title'], 
@@ -143,27 +150,48 @@ class TemplateWidget:
         )
         title_label.pack(side=ctk.LEFT, expand=True, anchor="w")
         
+        # Кнопка закрепления (звездочка)
+        is_pinned = self.template.get('pinned', False)
+        pin_emoji_char = "⭐" if is_pinned else "☆"
+        pin_img = EmojiIconButton.get_ctk_image(pin_emoji_char, size=20)
+        pin_btn = ctk.CTkButton(
+            title_frame,
+            text="",
+            image=pin_img,
+            command=lambda: self.pin_callback(self.template),
+            width=32,
+            height=32,
+            corner_radius=SIZES.CORNER_RADIUS_SMALL,
+            fg_color="transparent" if not is_pinned else COLORS.ACCENT_BLUE,
+            hover_color=COLORS.HOVER_DARK
+        )
+        pin_btn.pack(side=ctk.RIGHT, padx=(SIZES.PADDING_SMALL, 0))
+        
         # Кнопка копирования
+        copy_img = EmojiIconButton.get_ctk_image("📋", size=16)
         copy_btn = ctk.CTkButton(
             title_frame,
-            text=f"{EMOJI.COPY} Копировать",
-            command=lambda: self.copy_callback(self.template['text']),
-            width=120,
+            text="Копировать",
+            image=copy_img,
+            compound="left",
+            command=lambda: self.copy_callback(self.template),
+            width=140,
             height=SIZES.BUTTON_HEIGHT,
-            corner_radius=SIZES.CORNER_RADIUS_SMALL,
-            font=FONTS.BUTTON_EMOJI
+            corner_radius=SIZES.CORNER_RADIUS_SMALL
         )
         copy_btn.pack(side=ctk.RIGHT, padx=(SIZES.PADDING_SMALL, 0))
         
         # Кнопка редактирования
+        edit_img = EmojiIconButton.get_ctk_image("📝", size=16)
         edit_btn = ctk.CTkButton(
             title_frame,
-            text=f"{EMOJI.EDIT} Редактировать",
-            command=lambda: self.edit_callback(self.template_index),
-            width=140,
+            text="Редактировать",
+            image=edit_img,
+            compound="left",
+            command=lambda: self.edit_callback(self.template, self.template_index),
+            width=150,
             height=SIZES.BUTTON_HEIGHT,
-            corner_radius=SIZES.CORNER_RADIUS_SMALL,
-            font=FONTS.BUTTON_EMOJI
+            corner_radius=SIZES.CORNER_RADIUS_SMALL
         )
         edit_btn.pack(side=ctk.RIGHT, padx=SIZES.PADDING_SMALL)
         
@@ -314,37 +342,60 @@ class CategoryHeader:
         right_frame = ctk.CTkFrame(parent, fg_color="transparent")
         right_frame.pack(side=ctk.RIGHT, padx=(SIZES.PADDING_LARGE, 0))
         
+        # Группа 1: Управление категориями
+        category_group = ctk.CTkFrame(right_frame, fg_color="transparent")
+        category_group.pack(side=ctk.LEFT, padx=(0, 15))
+        
         # Кнопка добавления категории
+        add_cat_img = EmojiIconButton.get_ctk_image("➕", size=16)
         ctk.CTkButton(
-            right_frame, 
-            text=f"{EMOJI.ADD} Добавить", 
+            category_group, 
+            text="Добавить",
+            image=add_cat_img,
+            compound="left",
             command=self.on_add_category,
             width=SIZES.BUTTON_WIDTH_MEDIUM,
             height=SIZES.BUTTON_LARGE_HEIGHT,
-            corner_radius=SIZES.CORNER_RADIUS_SMALL,
-            font=FONTS.BUTTON_EMOJI
+            corner_radius=SIZES.CORNER_RADIUS_SMALL
         ).pack(side=ctk.LEFT, padx=3)
         
-        # Кнопка редактирования
+        # Кнопка редактирования категории
+        edit_cat_img = EmojiIconButton.get_ctk_image("📝", size=16)
         ctk.CTkButton(
-            right_frame, 
-            text=f"{EMOJI.EDIT} Редактировать", 
+            category_group, 
+            text="Редактировать", 
+            image=edit_cat_img,
+            compound="left",
             command=self.on_edit_category,
             width=SIZES.BUTTON_WIDTH_LARGE,
             height=SIZES.BUTTON_LARGE_HEIGHT,
-            corner_radius=SIZES.CORNER_RADIUS_SMALL,
-            font=FONTS.BUTTON_EMOJI
+            corner_radius=SIZES.CORNER_RADIUS_SMALL
         ).pack(side=ctk.LEFT, padx=3)
         
+        # Разделитель
+        separator = ctk.CTkLabel(
+            right_frame,
+            text="|",
+            text_color="#666666",
+            font=("Segoe UI", 18)
+        )
+        separator.pack(side=ctk.LEFT, padx=8)
+        
+        # Группа 2: Управление шаблонами
+        template_group = ctk.CTkFrame(right_frame, fg_color="transparent")
+        template_group.pack(side=ctk.LEFT)
+        
         # Кнопка нового шаблона
+        new_templ_img = EmojiIconButton.get_ctk_image("➕", size=16)
         ctk.CTkButton(
-            right_frame, 
-            text=f"{EMOJI.ADD} Новый шаблон", 
+            template_group, 
+            text="Новый шаблон", 
+            image=new_templ_img,
+            compound="left",
             command=self.on_add_template,
             width=SIZES.BUTTON_WIDTH_LARGE,
             height=SIZES.BUTTON_LARGE_HEIGHT,
-            corner_radius=SIZES.CORNER_RADIUS_SMALL,
-            font=FONTS.BUTTON_EMOJI
+            corner_radius=SIZES.CORNER_RADIUS_SMALL
         ).pack(side=ctk.LEFT, padx=3)
     
     def update_categories(self, categories: list) -> None:

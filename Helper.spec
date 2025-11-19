@@ -2,10 +2,10 @@
 
 
 a = Analysis(
-    ['main.py'],
+    ['C:\\Code\\Helper\\main.py'],
     pathex=[],
     binaries=[],
-    datas=[('version.json', '.'), ('icon.ico', '.')],
+    datas=[('C:\\Code\\Helper\\data\\version.json', 'data'), ('C:\\Code\\Helper\\icon.ico', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -26,7 +26,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
@@ -35,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['icon.ico'],
+    icon=['C:\\Code\\Helper\\icon.ico'],
 )

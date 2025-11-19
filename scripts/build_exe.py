@@ -7,6 +7,10 @@ import shutil
 import subprocess
 import sys
 
+# Установка кодировки для вывода
+os.system('chcp 65001 >nul')
+sys.stdout.reconfigure(encoding='utf-8')
+
 def build_exe():
     """Создание исполняемых файлов Helper.exe и updater.exe"""
     
@@ -39,11 +43,13 @@ def build_exe():
         '--onefile',
         '--windowed',
         '--name', 'Helper',
-        '--add-data', f'{os.path.join(project_dir, "version.json")};.',
+        '--add-data', f'{os.path.join(project_dir, "data", "version.json")};data',
         '--add-data', f'{os.path.join(project_dir, "icon.ico")};.',
         '--distpath', dist_dir,
         '--workpath', build_dir,
         '--specpath', project_dir,
+        '--noupx',           # Ускорение (без упаковки)
+        '--noconfirm',       # Без подтверждений
         os.path.join(project_dir, 'main.py'),
         '-y'
     ]

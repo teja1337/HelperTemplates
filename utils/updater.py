@@ -14,7 +14,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Пытаемся импортировать версию из Python модуля
 try:
-    from version import VERSION as HARDCODED_VERSION
+    from config.version import VERSION as HARDCODED_VERSION
 except ImportError:
     HARDCODED_VERSION = None
 
@@ -39,12 +39,12 @@ class AppUpdater:
                 # PyInstaller создаёт временную папку _MEIPASS
                 if hasattr(sys, '_MEIPASS'):
                     # Ищем в временной папке PyInstaller
-                    version_path = Path(sys._MEIPASS) / AppUpdater.VERSION_FILE
+                    version_path = Path(sys._MEIPASS) / "data" / AppUpdater.VERSION_FILE
                 else:
                     # Fallback - рядом с .exe
-                    version_path = Path(sys.executable).parent / AppUpdater.VERSION_FILE
+                    version_path = Path(sys.executable).parent / "data" / AppUpdater.VERSION_FILE
             else:
-                version_path = Path(__file__).parent.parent / AppUpdater.VERSION_FILE
+                version_path = Path(__file__).parent.parent / "data" / AppUpdater.VERSION_FILE
             
             print(f"[DEBUG] Читаю version.json из: {version_path}")
             with open(version_path, 'r', encoding='utf-8') as f:
